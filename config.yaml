@@ -58,7 +58,7 @@ simulation:
   margin_loan:
     ladders:  # opening, reset, call, enforcement (MDA II levels; reset rung PROPOSED)
       AAPL: [0.40, 0.45, 0.50, 0.65]
-      TSLA: [0.40, 0.45, 0.50, 0.65]  # Musk 2022 real ladder for comparison: 0.20 / 0.25 / 0.35
+      TSLA: [0.20, 0.25, 0.35, null]  # Musk 2022 term sheet: initial 20, reset 25, call 35, release 15; no enforcement level stated, the 40% price event applies
       RL: [0.40, 0.45, 0.50, 0.65]
       BTC-USD: [0.25, 0.30, 0.35, 0.50]
       WSO: [0.30, 0.35, 0.40, 0.55]
