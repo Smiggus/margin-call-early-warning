@@ -1,33 +1,40 @@
 # config.yaml  [Settings: single source of truth]
 # -------------------------------------------------------------------
 # Every non-secret setting the pipeline needs. Secrets go in .env.
-# Values marked PROPOSED are open for review; evidence for the ranges is in
-# docs/term_sheet_evidence.md and docs/term_sheet_evidence_round2.md.
+# Values marked PROPOSED are open for review. Evidence for the ranges:
+# docs/term_sheet_evidence.md, docs/term_sheet_evidence_round2.md, docs/deal_universe.md.
 
-profile: ci  # ci = small book that runs on GitHub runners; full = large book on own servers
+profile: ci  # ci = small book on public tickers, runs on GitHub runners; full = large book on own servers
 
 paths:
   raw_prices: data/raw/prices.csv
   raw_rates: data/raw/rates.csv
+  raw_deals: data/raw/deal_universe.csv  # real deals, kept out of Git
   raw_data: data/raw/contract_days.csv
   processed_data: data/processed/clean.csv
   model: models/model.joblib
   inference_data: data/inference/contract_days_today.csv
   predictions: reports/predictions.csv
   metrics: reports/metrics.json
+  real_deal_report: reports/real_deal_replay.csv
   log_file: logs/pipeline.log
 
 data:
-  source: yfinance
-  start_date: "2018-01-01"
+  # ci reads yfinance at run time; full reads the owner's data lake, which also
+  # holds delisted names (no survivorship bias). Lake location comes from .env.
+  source: {ci: yfinance, full: datalake}
+  start_date: "2007-01-01"  # PROPOSED: covers 2008, the OTE/Commerzbank TRS and the 2008 forced-sale cluster
   end_date: "2025-12-31"
-  tickers: [AAPL, TSLA, BTC-USD, RL, WSO, DDS, GPRO]
+  tickers:
+    mda_ii: [AAPL, TSLA, BTC-USD, RL, WSO, DDS, GPRO]
+    real_deals: from_deal_universe  # underlyings of dated deals with price coverage (full profile only)
   price_column: close
   volume_column: volume
   rates:
     source: fred
     reference_rate: SOFR
     backfill_rate: EFFR  # SOFR starts April 2018; earlier days use EFFR
+    eur_reference_rate: EURIBOR_1M  # for EUR-denominated real deals
 
 problem:
   target_column: called_within_5d
@@ -40,22 +47,23 @@ simulation:
   random_seed: 42
   origination: random
   products: [margin_loan, trs]
-  # contracts per ticker per year, by profile and product (PROPOSED)
-  contracts_per_ticker_per_year:
+  contracts_per_ticker_per_year:  # PROPOSED
     ci: {margin_loan: 1, trs: 1}
     full: {margin_loan: 20, trs: 20}
   term_years_min: 2
   term_years_max: 3
   rate_type: floating  # fixed-rate contracts and their IRS hedges are out of scope
-  financing:  # drawn per contract, annual rates (PROPOSED, evidence: 0.10% to 3.00%)
+  financing:  # drawn per contract, annual rates (evidence: 0.10% to 3.00% spreads)
     spread_min: 0.0100
     spread_max: 0.0300
-    desk_fee_min: 0.0010
-    desk_fee_max: 0.0050
+    desk_fee_min: 0.0010  # PROPOSED
+    desk_fee_max: 0.0050  # PROPOSED
     upfront_fee: 0.0
   # one ladder engine for both products: exposure ratio vs
   # [opening, reset, call, enforcement]; release frees excess collateral
   margin_loan:
+    initial_ltv_min: 0.20  # deal universe: most deals 20% to 50%, implied median 0.34
+    initial_ltv_max: 0.50
     ladders:  # opening, reset, call, enforcement (MDA II levels; reset rung PROPOSED)
       AAPL: [0.40, 0.45, 0.50, 0.65]
       TSLA: [0.20, 0.25, 0.35, null]  # Musk 2022 term sheet: initial 20, reset 25, call 35, release 15; no enforcement level stated, the 40% price event applies
@@ -64,35 +72,59 @@ simulation:
       WSO: [0.30, 0.35, 0.40, 0.55]
       DDS: [0.30, 0.35, 0.40, 0.55]
       GPRO: [0.30, 0.35, 0.40, 0.55]
+    default_ladder_offsets: {reset: 0.05, call: 0.15, enforcement: 0.30}  # added to the opening LTV for real-deal underlyings (PROPOSED, Musk: +5 / +15)
     release_offset: 0.05  # release when ratio <= opening - offset for release_days
     release_days: 5
-    call_persistence_days: 1  # PROPOSED: Ping An uses 3 consecutive days
+    call_persistence_days: 1  # Ping An and Sacyr/Repsol use 3 consecutive closes; set per template
     cure_to: reset
     share_price_event: 0.40  # mandatory prepayment if price < 40% of initial (Musk 2022)
   trs:
     direction: long  # client long, bank hedged by holding the shares
-    independent_amount_min: 0.075  # IA as share of notional, drawn per contract (PROPOSED)
+    independent_amount_min: 0.075  # IA as share of notional, drawn per contract
     independent_amount_max: 0.30
     equity_reset_share: {monthly: 0.5, none: 0.5}  # share of TRS book per reset type
     collateral_mode_share: {remargined: 0.5, fixed_usd: 0.5}  # fixed_usd = Archegos pattern
     dividends_passthrough: true
     materiality_of_ia: 0.25  # a call counts only if the top-up exceeds 25% of the IA (PROPOSED)
     cure_to: opening
+  # deal templates: each simulated contract draws one bundle of terms from these
+  templates:  # weight, cure days, persistence days (from documented deals)
+    musk_2022: {product: margin_loan, weight: 0.3, cure_days: 2, persistence_days: 1}
+    ping_an_2020: {product: margin_loan, weight: 0.1, cure_days: 11, persistence_days: 3}
+    sacyr_repsol: {product: margin_loan, weight: 0.1, cure_days: 2, persistence_days: 3}
+    mhr_jpm_2015: {product: margin_loan, weight: 0.1, cure_days: 1, persistence_days: 1}
+    layne_bank_one: {product: margin_loan, weight: 0.1, cure_days: 5, persistence_days: 1}
+    ote_commerzbank_2007: {product: trs, weight: 0.15, ia_pct: 0.15, equity_reset: monthly}
+    archegos_cs_2019: {product: trs, weight: 0.15, ia_pct: 0.075, equity_reset: none, collateral_mode: fixed_usd}
   all_borrowers_cure: true
-  cure_days_default: 2
+  cure_days_default: 2  # mode across US and European deals
   cure_days_crypto: 1
   facility_usd_mm: {AAPL: 400, TSLA: 350, BTC-USD: 200, RL: 300, WSO: 250, DDS: 150, GPRO: 150}
 
-split:  # by date, never random (PROPOSED dates)
+liquidation:  # used for the haircut and days to liquidate (evidence: Tellurian/Souki)
+  participation_rate_min: 0.05
+  participation_rate_max: 0.15
+
+split:  # by date, never random, around real stress events (PROPOSED)
   method: date
-  train_end: "2021-12-31"
-  validation_end: "2023-06-30"
-  embargo_days: 5
+  train_end: "2018-12-31"       # train 2007-2018: includes 2008
+  validation_end: "2020-12-31"  # validation 2019-2020: includes the COVID crash
+  embargo_days: 5               # test 2021-2025: includes Archegos and the 2022 drawdown
+
+real_deal_test:  # replay of real deals on real prices, scored but never trained on
+  enabled: {ci: false, full: true}
+  min_terms: 0  # missing terms are filled from the templates and flagged as imputed
+  require_dated: true
+  outcomes_positive: [called, forced_sale, foreclosed, defaulted, cured]
+  outcomes_negative: [none_known, prepaid]
+  exclude_outcomes: [unknown]
+  metrics: [event_recall, median_lead_time_days, false_alarm_rate]  # event_recall = share of real distress events warned at least 1 day ahead
+  report_by: [product, source_set, period]
 
 features:
   volatility: {columns: [vol_21d, vol_63d, vol_of_vol_63d, drawdown_63d], windows: [21, 63]}
   liquidity: {columns: [adv_20d, days_to_liquidate], adv_window: 20, participation_rate: 0.15}
-  contract: {columns: [product, current_ratio, distance_to_call, haircut, days_since_reset, ia_cover]}
+  contract: {columns: [product, current_ratio, distance_to_call, haircut, days_since_reset, ia_cover, persistence_count]}
   financing: {columns: [all_in_rate, accrued_financing]}
 
 haircut:
