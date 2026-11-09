@@ -8,7 +8,7 @@
 | European disclosures and cases (AMF, Companies House, BaFin, CNMV, courts, press) | 60 | Bollore/Vivendi, Adler/Vonovia, Sacyr/Repsol, Wirecard/Braun, Schaeffler, Porsche/VW, Altice/BT, Frasers/Ashley |
 | Court cases and academic sources | 37 (26 unique) | Archegos (7 banks), Luckin, Tellurian/Souki, Layne v. Bank One, Valeant/Pearson, McClendon, Musk |
 
-Earlier term-sheet evidence: `term_sheet_evidence.md`, `term_sheet_evidence_round2.md`.
+Term-sheet evidence: `term_sheet_evidence.md`.
 
 ## Coverage
 
