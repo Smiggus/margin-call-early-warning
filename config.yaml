@@ -2,7 +2,7 @@
 # -------------------------------------------------------------------
 # Every non-secret setting the pipeline needs. Secrets go in .env.
 # Values marked PROPOSED are open for review. Evidence for the ranges:
-# docs/term_sheet_evidence.md, docs/term_sheet_evidence_round2.md, docs/deal_universe.md.
+# docs/term_sheet_evidence.md and docs/deal_universe.md.
 
 profile: ci  # ci = small book on public tickers, runs on GitHub runners; full = large book on own servers
 
